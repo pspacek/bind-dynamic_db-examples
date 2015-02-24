@@ -11,19 +11,20 @@
  * if they reference the same driver/library. It is up to driver implementation
  * to detect and catch this situation if it is undesirable.
  *
- * Copyright (C) 2015  Red Hat ; see COPYING for license
+ * Copyright (C) 2009--2015  Red Hat ; see COPYING for license
  */
-#include <isc/log.h>
-#include <isc/task.h>
+
+#include <isc/util.h>
+
 #include <dns/db.h>
-#include <dns/dynamic_db.h>
+#include <dns/types.h>
 
-#define LOG(format, ...) isc_log_write1(dns_lctx, DNS_LOGCATEGORY_DATABASE, \
-				       DNS_LOGMODULE_DYNDB, ISC_LOG_INFO,   \
-				       "[driver %s][instance %s] " format,  \
-				       impname, name, ##__VA_ARGS__)
+#include "db.h"
+#include "log.h"
+#include "instance_manager.h"
 
-const char *impname = "minimal-driver";
+static dns_dbimplementation_t *sampledb_imp;
+const char *impname = "dynamic-sample";
 
 /**
  * Driver init is is called once during startup and then on every reload.
@@ -48,21 +49,27 @@ isc_result_t
 dynamic_driver_init(isc_mem_t *mctx, const char *name, const char * const *argv,
 		    dns_dyndb_arguments_t *dyndb_args)
 {
-	int idx = 0;
+	dns_dbimplementation_t *sampledb_imp_new = NULL;
+	isc_result_t result;
 
-	UNUSED(mctx);
-	UNUSED(dyndb_args);
+	REQUIRE(name != NULL);
+	REQUIRE(argv != NULL);
+	REQUIRE(dyndb_args != NULL);
 
-	LOG("driver init");
-	if (argv != NULL) {
-		for (idx = 0; argv[idx] != NULL; idx++) {
-			LOG("arg[%d] = '%s'", idx, argv[idx]);
-		}
-	}
+	log_info("registering dynamic sample driver for instance '%s'", name);
 
-	/* Do whatever you want with variables from dns_dyndb_arguments_t. */
+	/* Register new DNS DB implementation. */
+	result = dns_db_register(impname, create_db, NULL, mctx,
+				 &sampledb_imp_new);
+	if (result != ISC_R_SUCCESS && result != ISC_R_EXISTS)
+		return result;
+	else if (result == ISC_R_SUCCESS)
+		sampledb_imp = sampledb_imp_new;
 
-	return ISC_R_SUCCESS;
+	/* Finally, create the instance. */
+	result = manager_create_db_instance(mctx, name, argv, dyndb_args);
+
+	return result;
 }
 
 /**
@@ -75,7 +82,9 @@ dynamic_driver_init(isc_mem_t *mctx, const char *name, const char * const *argv,
 void
 dynamic_driver_destroy(void)
 {
-	isc_log_write1(dns_lctx, DNS_LOGCATEGORY_DATABASE, DNS_LOGMODULE_DYNDB,
-		       ISC_LOG_INFO, "[driver %s] driver destroy",
-		       impname);
+	/* Only unregister the implementation if it was registered by us. */
+	if (sampledb_imp != NULL)
+		dns_db_unregister(&sampledb_imp);
+
+	destroy_manager();
 }

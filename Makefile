@@ -1,8 +1,8 @@
-COMMON_HDR = util.h instance_manager.h log.h
+COMMON_HDR = db.h util.h instance.h instance_manager.h lock.h log.h zone.h
 CC = color-gcc
 CFLAGS = $(shell isc-config.sh --cflags bind9) -fpic -Wall -Wextra -std=gnu99 -ggdb3
 LDFLAGS = $(shell isc-config.sh --libs bind9) -shared
-OBJECTS = driver.o
+OBJECTS = db.o driver.o instance.o instance_manager.o lock.o log.o zone.o
 
 %.o: %.c $(COMMON_HDR)
 	$(CC) $(CFLAGS) -c -o $@ $<
