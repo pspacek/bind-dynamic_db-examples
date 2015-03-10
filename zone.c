@@ -29,6 +29,7 @@ create_zone(sample_instance_t * const inst, dns_name_t * const name,
 	dns_zone_t *raw = NULL;
 	const char *zone_argv[2];
 	char zone_name[DNS_NAME_FORMATSIZE];
+	dns_acl_t *acl_any = NULL;
 
 	REQUIRE(inst != NULL);
 	REQUIRE(name != NULL);
@@ -44,6 +45,13 @@ create_zone(sample_instance_t * const inst, dns_name_t * const name,
 	CHECK(dns_zone_setdbtype(raw, 2, zone_argv));
 	CHECK(dns_zonemgr_managezone(inst->zmgr, raw));
 
+	/* This is completely insecure - use some sensible values instead! */
+	CHECK(dns_acl_any(inst->mctx, &acl_any));
+	dns_zone_setupdateacl(raw, acl_any);
+	dns_zone_setqueryacl(raw, acl_any);
+	dns_zone_setxfracl(raw, acl_any);
+	dns_acl_detach(&acl_any);
+
 	*rawp = raw;
 	return ISC_R_SUCCESS;
 
@@ -56,6 +64,8 @@ cleanup:
 			dns_zonemgr_releasezone(inst->zmgr, raw);
 		dns_zone_detach(&raw);
 	}
+	if (acl_any != NULL)
+		dns_acl_detach(&acl_any);
 
 	return result;
 }
