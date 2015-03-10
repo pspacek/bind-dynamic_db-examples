@@ -35,10 +35,27 @@ test.			86400	IN	A	127.0.0.1
 test.			86400	IN	NS	test.
 test.			86400	IN	SOA	test. test. 0 28800 7200 604800 86400
 
-This drives does not do anything more than creating two empty zones and
-allowing query/transfer/update to all IP addresses.
-It demonstrates how to wrap RBT database implementation used natively by BIND.
-Feel free to test AXFR and dynamic updates, both should work as usual.
+This driver creates two empty zones and allows query/transfer/update to all
+IP addresses for demonstrational purposes.
+
+The driver wraps RBT database implementation used natively by BIND and modifies
+addrdataset() and substractrdataset() functions to do additional work during
+dynamic updates.
+
+Dynamic update modifies the target zone as usual. After that the driver detects
+if modified RR was A or AAAA and attempts to generate or delete matching
+PTR record in one of the two zones managed by the driver.
+
+E.g.
+update add a.test. 300 IN A 192.0.2.1
+will add the A record
+a.test.			300	IN	A	192.0.2.1
+and also automatically generate record
+1.2.0.192.in-addr.arpa.	300	IN	PTR	a.test.
+
+
+Feel free to test AXFR and RR deletion via dynamic updates, both should work
+as usual + deletion of A/AAAA record should delete relevant PTR record too.
 
 The zone is stored only in memory and all changes will be lost on reload.
 
@@ -50,6 +67,6 @@ Hints for code readers:
   to initialize the database.
 - Zones are created later in instance.c: load_sample_instance_zones().
 - Database entry points are in structure db.c: dns_dbmethods_t sampledb_methods
-- Sampledb_methods points to own implementation of database interface but this
-  implementation blindly relays all calls to "wrapped" RBT database instance.
-  See e.g. db.c: addrdataset().
+- Sampledb_methods points to own implementation of database interface.
+  See db.c: addrdataset() implementation and look how RBT database instance is
+  wrapped into an additional layer of logic.
