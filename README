@@ -1,0 +1,31 @@
+1) Compile and install BIND 9 with patches from
+https://github.com/spacekpe/bind-dynamic_db
+
+2) Compile this sample driver:
+$ make
+
+3) Copy resulting binary sample.so to BIND library directory:
+$ cp sample.so /usr/lib64/bind/
+
+4) Add driver configuration to named.conf:
+$ cat >> /etc/named.conf <<EOF
+dynamic-db "sample" {
+        library "sample.so";
+        arg "test.";
+        arg "arpa.";
+};
+EOF
+
+5) Run named and see logs.
+$ named -g -u named
+
+You should be able to see something like
+[driver minimal-driver][instance sample] driver init
+[driver minimal-driver][instance sample] arg[0] = 'test.'
+[driver minimal-driver][instance sample] arg[1] = 'arpa.'
+
+It means that dynamic_driver_init() function from driver.c was called!
+This function can do anything you like and is not limited in any way.
+
+You can reconfigure BIND at run-time, create and remove zones etc.
+See other examples for more advanced usage.
