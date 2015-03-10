@@ -20,12 +20,36 @@ EOF
 $ named -g -u named
 
 You should be able to see something like
-[driver minimal-driver][instance sample] driver init
-[driver minimal-driver][instance sample] arg[0] = 'test.'
-[driver minimal-driver][instance sample] arg[1] = 'arpa.'
+zone test/IN: loaded serial 0
+zone arpa/IN: loaded serial 0
 
-It means that dynamic_driver_init() function from driver.c was called!
-This function can do anything you like and is not limited in any way.
+It means that the sample driver created empty zones test. and arpa. as defined
+by "arg" parameters.
 
-You can reconfigure BIND at run-time, create and remove zones etc.
-See other examples for more advanced usage.
+$ dig @localhost test.
+should work as usual and you should be able to see dummy zone with NS record
+pointing to zone apex and A record for 127.0.0.1:
+
+;; ANSWER SECTION:
+test.			86400	IN	A	127.0.0.1
+test.			86400	IN	NS	test.
+test.			86400	IN	SOA	test. test. 0 28800 7200 604800 86400
+
+This drives does not do anything more than creating two empty zones and
+allowing query/transfer/update to all IP addresses.
+It demonstrates how to wrap RBT database implementation used natively by BIND.
+Feel free to test AXFR and dynamic updates, both should work as usual.
+
+The zone is stored only in memory and all changes will be lost on reload.
+
+
+Hints for code readers:
+- Driver initialization starts in driver.c: dynamic_driver_init() function.
+- New database implementation is registered by calling dns_db_register() and
+  passing function pointer to it. This sample uses own function create_db()
+  to initialize the database.
+- Zones are created later in instance.c: load_sample_instance_zones().
+- Database entry points are in structure db.c: dns_dbmethods_t sampledb_methods
+- Sampledb_methods points to own implementation of database interface but this
+  implementation blindly relays all calls to "wrapped" RBT database instance.
+  See e.g. db.c: addrdataset().
