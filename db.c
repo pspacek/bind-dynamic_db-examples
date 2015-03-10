@@ -12,7 +12,9 @@
  */
 
 #include <dns/db.h>
+#include <dns/diff.h>
 #include <dns/enumclass.h>
+#include <dns/rbt.h>
 #include <dns/rdatalist.h>
 #include <dns/rdatastruct.h>
 #include <dns/soa.h>
@@ -20,6 +22,7 @@
 
 #include "instance.h"
 #include "instance_manager.h"
+#include "syncptr.h"
 #include "util.h"
 
 #define SAMPLEDB_MAGIC			ISC_MAGIC('S', 'M', 'D', 'B')
@@ -45,6 +48,21 @@ sampledb_get_rbtdb(dns_db_t *db) {
 	sampledb_t *sampledb = (sampledb_t *)db;
 	REQUIRE(VALID_SAMPLEDB(sampledb));
 	return sampledb->rbtdb;
+}
+
+/**
+ * Get full DNS name from the node.
+ *
+ * @warning
+ * The code silently expects that "node" came from RBTDB and thus
+ * assumption dns_dbnode_t (from RBTDB) == dns_rbtnode_t is correct.
+ *
+ * This should work as long as we use only RBTDB and nothing else.
+ */
+static isc_result_t
+sample_name_fromnode(dns_dbnode_t *node, dns_name_t *name) {
+	dns_rbtnode_t *rbtnode = (dns_rbtnode_t *) node;
+	return dns_rbt_fullnamefromnode(rbtnode, name);
 }
 
 static void
@@ -267,9 +285,23 @@ addrdataset(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
 	    dns_rdataset_t *addedrdataset)
 {
 	sampledb_t *sampledb = (sampledb_t *) db;
+	isc_result_t result;
+	dns_fixedname_t name;
+
 	REQUIRE(VALID_SAMPLEDB(sampledb));
-	return dns_db_addrdataset(sampledb->rbtdb, node, version, now,
-				  rdataset, options, addedrdataset);
+
+	dns_fixedname_init(&name);
+	CHECK(dns_db_addrdataset(sampledb->rbtdb, node, version, now,
+				 rdataset, options, addedrdataset));
+	if (rdataset->type == dns_rdatatype_a ||
+	    rdataset->type == dns_rdatatype_aaaa) {
+		CHECK(sample_name_fromnode(node, dns_fixedname_name(&name)));
+		CHECK(syncptrs(sampledb->inst, dns_fixedname_name(&name),
+			       rdataset, DNS_DIFFOP_ADD));
+	}
+
+cleanup:
+	return result;
 }
 
 static isc_result_t
@@ -278,11 +310,32 @@ subtractrdataset(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
 		 dns_rdataset_t *newrdataset)
 {
 	sampledb_t *sampledb = (sampledb_t *) db;
+	isc_result_t result;
+	dns_fixedname_t name;
+
 	REQUIRE(VALID_SAMPLEDB(sampledb));
-	return dns_db_subtractrdataset(sampledb->rbtdb, node, version,
-				       rdataset, options, newrdataset);
+
+	dns_fixedname_init(&name);
+	result = dns_db_subtractrdataset(sampledb->rbtdb, node, version,
+					 rdataset, options, newrdataset);
+	if (result != ISC_R_SUCCESS && result != DNS_R_NXRRSET)
+		goto cleanup;
+
+	if (rdataset->type == dns_rdatatype_a ||
+	    rdataset->type == dns_rdatatype_aaaa) {
+		CHECK(sample_name_fromnode(node, dns_fixedname_name(&name)));
+		CHECK(syncptrs(sampledb->inst, dns_fixedname_name(&name),
+			       rdataset, DNS_DIFFOP_DEL));
+	}
+
+cleanup:
+	return result;
 }
 
+/**
+ * deleterdataset() function is not used during DNS update processing so syncptr
+ * implementation is left as an exercise to the reader.
+ */
 static isc_result_t
 deleterdataset(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
 	       dns_rdatatype_t type, dns_rdatatype_t covers)
@@ -523,6 +576,8 @@ static dns_dbmethods_t sampledb_methods = {
 	setcachestats,
 	hashsize
 };
+
+/** Auxiliary driver functions. **/
 
 /**
  * Auxiliary functions add_*() create minimal database which can be loaded.
